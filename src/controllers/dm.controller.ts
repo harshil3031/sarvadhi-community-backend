@@ -133,11 +133,26 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
   });
 };
 
+/**
+ * Search users to start a 1-on-1 DM
+ */
+export const searchUsers = async (req: Request, res:Response) => {
+  if (!req.user) {
+    throw new ValidationError('User not authenticated');
+  }
+  const query = req.query.query as string;
+  const currentUserId = req.user.id;
+
+  const users = await dmService.searchUsers(query, currentUserId);
+  res.json({ success: true, data: users });
+};
+
 export default {
   getConversations,
   getMessages,
   createConversation,
   sendMessage,
   updateMessage,
-  deleteMessage
+  deleteMessage,
+  searchUsers
 };

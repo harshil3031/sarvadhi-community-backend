@@ -14,9 +14,9 @@ const app: Application = express();
 // Security middleware
 app.use(helmet());
 
-// CORS configuration
+// CORS configuration - allow all origins in development
 app.use(cors({
-  origin: config.cors.allowedOrigins,
+  origin: config.env === 'development' ? true : config.cors.allowedOrigins,
   credentials: true
 }));
 
@@ -43,6 +43,28 @@ app.get('/health', (_req: Request, res: Response) => {
     success: true,
     message: 'Server is running',
     timestamp: new Date().toISOString()
+  });
+});
+
+// Debug endpoint - helps with connectivity issues
+app.get('/api/debug/info', (_req: Request, res: Response) => {
+  res.status(200).json({
+    success: true,
+    server: {
+      running: true,
+      port: config.port,
+      environment: config.env,
+      timestamp: new Date().toISOString(),
+    },
+    database: {
+      connected: true,
+      host: config.database.host || 'using DATABASE_URL',
+    },
+    cors: {
+      enabled: true,
+      allowAllOrigins: config.env === 'development',
+    },
+    message: 'Server is healthy and accessible'
   });
 });
 

@@ -229,7 +229,7 @@ export const getGroupMembers = async (req: Request, res: Response): Promise<void
   }
 
   const members = await groupService.getGroupMembers(id, req.user.id);
-
+  console.log(members)
   res.status(200).json({
     success: true,
     data: members

@@ -1,5 +1,6 @@
 import { DMConversation, DMParticipant, DMMessage, User } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../utils/errors.js';
+import { Op } from 'sequelize';
 
 /**
  * Get all conversations for a user
@@ -338,6 +339,37 @@ const updateMessage = async (messageId: string, content: string, senderId: strin
   return message;
 };
 
+/**
+ * Search users by name or email for starting a conversation
+ */
+const searchUsers = async (query: string, currentUserId: string): Promise<any[]> => {
+  if (!query || query.trim() === '') {
+    return [];
+  }
+
+  // Find users whose name or email contains the query, excluding current user
+  const users = await User.findAll({
+    where: {
+      id: { [Op.ne]: currentUserId }, // Exclude self
+      [Op.or]: [
+        { fullName: { [Op.iLike]: `%${query}%` } },
+        { email: { [Op.iLike]: `%${query}%` } },
+      ],
+    },
+    attributes: ['id', 'fullName', 'email', 'profilePhotoUrl'],
+    limit: 20, // limit to 20 results
+    order: [['fullName', 'ASC']],
+  });
+
+  return users.map(u => ({
+    id: u.id,
+    fullName: u.fullName,
+    email: u.email,
+    avatar: u.profilePhotoUrl,
+  }));
+};
+
+
 export default {
   getConversations,
   getMessages,
@@ -345,5 +377,6 @@ export default {
   createOrGetConversation,
   sendMessage,
   deleteMessage,
-  updateMessage
+  updateMessage,
+  searchUsers
 };

@@ -102,6 +102,9 @@ const loginUser = async (
   const user = await User.findOne({
     where: { email: normalizedEmail },
   });
+  console.log("User fetched for login:", user);
+  console.log("User password hash:", user ? user.passwordHash : 'No user found');
+  console.log(user?.email)
 
   if (!user || !user.passwordHash) {
     throw new UnauthorizedError('Invalid email or password');
@@ -118,7 +121,7 @@ const loginUser = async (
   }
 
   const isValid = await bcrypt.compare(password, user.passwordHash);
-
+  console.log("Password valid:", isValid);
   if (!isValid) {
     throw new UnauthorizedError('Invalid email or password');
   }
@@ -128,7 +131,7 @@ const loginUser = async (
     email: user.email,
     role: user.role,
   });
-
+  console.log("Generated token for user:", token);
   return {
     token,
     user: formatUserResponse(user),

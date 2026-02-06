@@ -48,13 +48,10 @@ router.put('/messages/:id', authenticate, asyncHandler(dmController.updateMessag
 router.delete('/messages/:id', authenticate, asyncHandler(dmController.deleteMessage));
 
 /**
- * @route   GET /api/dms/:conversationId/messages
- * @desc    Get messages in a conversation (alternative route)
+ * @route   GET /api/dms/users/search
+ * @desc    Search users by name or email to start a DM
  * @access  Private
  */
-router.get('/:conversationId/messages', authenticate, asyncHandler(dmController.getMessages));
-
-// Note: WebSocket events (send_message, receive_message, typing, stop_typing)
-// are handled in socket.ts (separate from REST routes)
+router.get('/users/search', authenticate, asyncHandler(dmController.searchUsers));
 
 export default router;

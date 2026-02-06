@@ -116,11 +116,42 @@ export const deleteAllNotifications = async (req: Request, res: Response): Promi
   });
 };
 
+/**
+ * POST /notifications/push-token
+ * Register push token for current user
+ */
+export const registerPushToken = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  if (!req.user) {
+    throw new ValidationError('User not authenticated');
+  }
+
+  const { token, platform } = req.body;
+
+  if (!token || !platform) {
+    throw new ValidationError('Token and platform are required');
+  }
+
+  await notificationService.registerPushToken(
+    req.user.id,
+    token,
+    platform
+  );
+
+  res.status(200).json({
+    success: true,
+    message: 'Push token registered successfully',
+  });
+};
+
 export default {
   getNotifications,
   markAsRead,
   markAllAsRead,
   getUnreadCount,
   deleteNotification,
-  deleteAllNotifications
+  deleteAllNotifications,
+  registerPushToken
 };

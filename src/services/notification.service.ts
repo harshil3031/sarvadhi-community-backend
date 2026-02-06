@@ -1,6 +1,7 @@
-import { Notification, User } from '../db/models/index.js';
+import { Notification, User, PushToken } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../utils/errors.js';
 import { Op } from 'sequelize';
+import { sendPushNotification } from '../utils/pushNotification.js';
 
 /**
  * Notification types
@@ -56,7 +57,20 @@ const createNotification = async (
     isRead: false
   });
 
-  return formatNotificationResponse(notification);
+  const formatted = formatNotificationResponse(notification);
+
+  // 🔔 SEND PUSH NOTIFICATION
+  await sendPushNotification(userId, {
+    title: formatted.title,
+    body: formatted.message,
+    data: {
+      type,
+      referenceId,
+      notificationId: notification.id,
+    },
+  });
+
+  return formatted;
 };
 
 /**
@@ -182,6 +196,33 @@ const formatNotificationResponse = (notification: Notification): any => {
   };
 };
 
+/**
+ * Register or update push token for a user
+ */
+const registerPushToken = async (
+  userId: string,
+  token: string,
+  platform: 'android' | 'ios'
+): Promise<void> => {
+  if (!token) {
+    throw new ValidationError('Push token is required');
+  }
+
+  // Ensure user exists
+  const user = await User.findByPk(userId);
+  if (!user) {
+    throw new ValidationError('User not found');
+  }
+
+  // Upsert token (prevents duplicates)
+  await PushToken.upsert({
+    userId,
+    token,
+    platform,
+    isActive: true,
+  });
+};
+
 export default {
   getNotifications,
   createNotification,
@@ -190,5 +231,6 @@ export default {
   getUnreadCount,
   deleteNotification,
   deleteAllNotifications,
-  deleteOldNotifications
+  deleteOldNotifications,
+  registerPushToken
 };

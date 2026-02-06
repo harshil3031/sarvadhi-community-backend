@@ -13,6 +13,17 @@ const router: Router = express.Router();
 router.get('/', authenticate, asyncHandler(notificationController.getNotifications));
 
 /**
+ * @route   POST /api/notifications/push-token
+ * @desc    Register push token for current user
+ * @access  Private
+ */
+router.post(
+  '/push-token',
+  authenticate,
+  asyncHandler(notificationController.registerPushToken)
+);
+
+/**
  * @route   POST /api/notifications/:id/read
  * @desc    Mark notification as read
  * @access  Private
@@ -46,5 +57,6 @@ router.delete('/:id', authenticate, asyncHandler(notificationController.deleteNo
  * @access  Private
  */
 router.delete('/', authenticate, asyncHandler(notificationController.deleteAllNotifications));
+
 
 export default router;

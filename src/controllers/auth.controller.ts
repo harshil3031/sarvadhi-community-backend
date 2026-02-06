@@ -61,7 +61,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
 
   // Call service to authenticate user
   const result = await authService.loginUser(email, password);
-
+  console.log("Login successful for user:", result.user.data);
   res.status(200).json({
     success: true,
     message: 'Login successful',
@@ -123,7 +123,7 @@ export const getCurrentUser = async (req: Request, res: Response): Promise<void>
  * POST /auth/logout
  * Logout current user (client-side token invalidation)
  */
-export const logout = async (req: Request, res: Response): Promise<void> => {
+export const logout = async (_req: Request, res: Response): Promise<void> => {
   // Since we're using JWT, logout is handled client-side by removing the token
   // This endpoint exists for consistency and can be extended for token blacklisting if needed
   

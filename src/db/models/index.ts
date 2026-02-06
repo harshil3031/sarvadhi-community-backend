@@ -12,6 +12,7 @@ import DMConversation, { initDMConversation } from './DMConversation.js';
 import DMParticipant, { initDMParticipant } from './DMParticipant.js';
 import DMMessage, { initDMMessage } from './DMMessage.js';
 import Notification, { initNotification } from './Notification.js';
+import PushToken, { initPushToken } from './push-token.js';
 
 export {
   User,
@@ -26,7 +27,8 @@ export {
   DMConversation,
   DMParticipant,
   DMMessage,
-  Notification
+  Notification,
+  PushToken
 };
 
 export const initializeModels = (sequelize: Sequelize) => {
@@ -44,13 +46,14 @@ export const initializeModels = (sequelize: Sequelize) => {
   initDMParticipant(sequelize);
   initDMMessage(sequelize);
   initNotification(sequelize);
-
+  initPushToken(sequelize);
   // Define associations based on specification
 
   // User associations
   User.hasMany(Post, { foreignKey: 'authorId', as: 'posts' });
   User.hasMany(Comment, { foreignKey: 'authorId', as: 'comments' });
   User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications' });
+  User.hasMany(PushToken, { foreignKey: 'userId', as: 'pushTokens'});
 
   // Channel associations
   Channel.belongsTo(User, { foreignKey: 'createdBy', as: 'creator' });
@@ -93,4 +96,7 @@ export const initializeModels = (sequelize: Sequelize) => {
   DMParticipant.belongsTo(DMConversation, { foreignKey: 'conversationId' });
 
   Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+  PushToken.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
 };

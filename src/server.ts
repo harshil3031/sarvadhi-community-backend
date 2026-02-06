@@ -21,13 +21,14 @@ const startServer = async (): Promise<void> => {
     const httpServer = createServer(app);
 
     // Initialize WebSocket server
-    const io = initializeSocket(httpServer);
+    initializeSocket(httpServer);
     console.log('✅ WebSocket server initialized');
 
-    // Start listening
-    httpServer.listen(PORT, () => {
+    // Start listening on all network interfaces (0.0.0.0)
+    httpServer.listen(PORT, '0.0.0.0', () => {
       console.log(`\n🚀 Server running in ${config.env} mode on port ${PORT}`);
       console.log(`📍 Health check: http://localhost:${PORT}/health`);
+      console.log(`📍 Network: http://192.168.2.169:${PORT}/api`);
       console.log(`📍 API endpoint: http://localhost:${PORT}/api`);
       console.log(`📍 WebSocket: ws://localhost:${PORT}\n`);
     });

@@ -352,7 +352,7 @@ const formatGroupResponse = (group: Group): any => {
     id: group.id,
     name: group.name,
     description: group.description,
-    createdBy: group.createdBy,
+    creatorId: group.createdBy,
     createdAt: group.createdAt
   };
 };
