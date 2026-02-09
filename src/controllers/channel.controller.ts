@@ -288,6 +288,104 @@ export const getChannelMembers = async (req: Request, res: Response): Promise<vo
   });
 };
 
+/**
+ * GET /channels/search
+ * Search channels
+ */
+export const searchChannels = async (req: Request, res: Response): Promise<void> => {
+  const { q } = req.query;
+  const query = q as string;
+
+  if (!query) {
+    res.status(200).json({
+      success: true,
+      data: []
+    });
+    return;
+  }
+
+  const channels = await channelService.searchChannels(query, req.user?.id);
+
+  res.status(200).json({
+    success: true,
+    data: channels
+  });
+};
+
+/**
+ * POST /channels/:id/remove-member
+ * Remove a member from a channel (admin/moderator only)
+ */
+export const removeMember = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  if (!id) {
+    throw new ValidationError('Channel ID is required');
+  }
+
+  if (!userId) {
+    throw new ValidationError('User ID is required');
+  }
+
+  if (!req.user) {
+    throw new ValidationError('User not authenticated');
+  }
+
+  await channelService.removeMember(id, userId, req.user.id, req.user.role);
+
+  res.status(200).json({
+    success: true,
+    message: 'Member removed successfully'
+  });
+};
+
+/**
+ * POST /channels/:id/accept-invite
+ * Accept a channel invitation
+ */
+export const acceptInvite = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  if (!id) {
+    throw new ValidationError('Channel ID is required');
+  }
+
+  if (!req.user) {
+    throw new ValidationError('User not authenticated');
+  }
+
+  await channelService.acceptInvite(id, req.user.id);
+
+  res.status(200).json({
+    success: true,
+    message: 'Invitation accepted successfully'
+  });
+};
+
+/**
+ * POST /channels/:id/reject-invite
+ * Reject a channel invitation
+ */
+export const rejectInvite = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+
+  if (!id) {
+    throw new ValidationError('Channel ID is required');
+  }
+
+  if (!req.user) {
+    throw new ValidationError('User not authenticated');
+  }
+
+  await channelService.rejectInvite(id, req.user.id);
+
+  res.status(200).json({
+    success: true,
+    message: 'Invitation rejected successfully'
+  });
+};
+
 export default {
   createChannel,
   getPublicChannels,
@@ -300,5 +398,9 @@ export default {
   approveJoinRequest,
   inviteToChannel,
   getAccessibleChannels,
-  getChannelMembers
+  getChannelMembers,
+  searchChannels,
+  removeMember,
+  acceptInvite,
+  rejectInvite
 };

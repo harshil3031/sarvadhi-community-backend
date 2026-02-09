@@ -1,6 +1,7 @@
 import { DMConversation, DMParticipant, DMMessage, User } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../utils/errors.js';
 import { Op } from 'sequelize';
+import notificationService, { NotificationType } from './notification.service.js';
 
 /**
  * Get all conversations for a user
@@ -37,7 +38,7 @@ const getConversations = async (userId: string): Promise<any[]> => {
       {
         model: DMMessage,
         as: 'messages',
-        attributes: ['id', 'conversationId', 'senderId', 'content', 'imageUrl', 'isDeleted', 'createdAt'],
+        attributes: ['id', 'conversationId', 'senderId', 'content', 'imageUrl', 'isDeleted', 'readAt', 'createdAt'],
         limit: 1,
         separate: true,
         order: [['createdAt', 'DESC']],
@@ -53,7 +54,20 @@ const getConversations = async (userId: string): Promise<any[]> => {
     order: [['createdAt', 'DESC']]
   });
 
-  return conversations.map(formatConversationResponse);
+  const result = [];
+  for (const conv of conversations) {
+    const unreadCount = await DMMessage.count({
+      where: {
+        conversationId: conv.id,
+        senderId: { [Op.ne]: userId },
+        readAt: null,
+        isDeleted: false
+      }
+    });
+    result.push(formatConversationResponse(conv, unreadCount));
+  }
+
+  return result;
 };
 
 /**
@@ -124,33 +138,32 @@ const getOrCreateConversation = async (
   const user1ConvIds = user1Convs.map(p => p.conversationId);
 
   // Find conversations where user2 is also a participant
-  let conversation = null;
+  let conversationId = null;
   if (user1ConvIds.length > 0) {
     const commonConv = await DMParticipant.findOne({
-      where: { 
+      where: {
         conversationId: user1ConvIds,
         userId: userId2
       }
     });
 
     if (commonConv) {
-      // Get the conversation ID
       const convId = commonConv.conversationId;
-      
+
       // Verify it's a 1-on-1 (only 2 participants)
       const participantCount = await DMParticipant.count({
         where: { conversationId: convId }
       });
 
       if (participantCount === 2) {
-        conversation = await DMConversation.findByPk(convId);
+        conversationId = convId;
       }
     }
   }
 
-  if (conversation) {
+  if (conversationId) {
     // Return full conversation object with participants
-    const fullConversation = await DMConversation.findByPk(conversation.id, {
+    const fullConversation = await DMConversation.findByPk(conversationId, {
       include: [
         {
           model: DMParticipant,
@@ -165,7 +178,18 @@ const getOrCreateConversation = async (
         }
       ]
     });
-    return formatConversationResponse(fullConversation!);
+
+    if (fullConversation) {
+      const unreadCount = await DMMessage.count({
+        where: {
+          conversationId: fullConversation.id,
+          senderId: { [Op.ne]: userId1 },
+          readAt: null,
+          isDeleted: false
+        }
+      });
+      return formatConversationResponse(fullConversation, unreadCount);
+    }
   }
 
   // Create new conversation
@@ -201,7 +225,7 @@ const getOrCreateConversation = async (
     ]
   });
 
-  return formatConversationResponse(fullConversation!);
+  return formatConversationResponse(fullConversation!, 0);
 };
 
 /**
@@ -238,6 +262,27 @@ const sendMessage = async (
     isDeleted: false
   });
 
+  // 🔔 Notify other participants
+  const otherParticipants = await DMParticipant.findAll({
+    where: {
+      conversationId,
+      userId: { [Op.ne]: senderId }
+    }
+  });
+
+  for (const participant of otherParticipants) {
+    try {
+      await notificationService.createNotification(
+        participant.userId,
+        NotificationType.DM_MESSAGE,
+        conversationId
+      );
+    } catch (err) {
+      console.error('Failed to create notification for DM:', err);
+      // Don't fail the message send if notification fails
+    }
+  }
+
   return formatMessageResponse(message);
 };
 
@@ -267,7 +312,7 @@ const deleteMessage = async (messageId: string, userId: string): Promise<void> =
 /**
  * Format conversation response
  */
-const formatConversationResponse = (conversation: DMConversation): any => {
+const formatConversationResponse = (conversation: DMConversation, unreadCount = 0): any => {
   const messages = (conversation as any).messages || [];
   const lastMessage = messages.length > 0 ? messages[0] : null;
 
@@ -283,8 +328,7 @@ const formatConversationResponse = (conversation: DMConversation): any => {
       avatar: p.User.profilePhotoUrl
     })),
     lastMessage: formattedLastMessage,
-    // For now, no unread tracking on backend – default to 0
-    unreadCount: 0,
+    unreadCount: unreadCount,
     // Use last message time as updatedAt fallback to createdAt
     updatedAt: formattedLastMessage?.createdAt || conversation.createdAt,
     createdAt: conversation.createdAt
@@ -370,6 +414,23 @@ const searchUsers = async (query: string, currentUserId: string): Promise<any[]>
 };
 
 
+/**
+ * Mark all messages in a conversation as read for a user
+ */
+const markAsRead = async (conversationId: string, userId: string): Promise<void> => {
+  // Update all messages where user is NOT the sender and readAt is null
+  await DMMessage.update(
+    { readAt: new Date() },
+    {
+      where: {
+        conversationId,
+        senderId: { [Op.ne]: userId },
+        readAt: null
+      }
+    }
+  );
+};
+
 export default {
   getConversations,
   getMessages,
@@ -378,5 +439,6 @@ export default {
   sendMessage,
   deleteMessage,
   updateMessage,
-  searchUsers
+  searchUsers,
+  markAsRead
 };

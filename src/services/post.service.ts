@@ -1,6 +1,8 @@
 import { Post, Channel, ChannelMember, Group, GroupMember, User } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../utils/errors.js';
+import notificationService, { NotificationType } from './notification.service.js';
 import { Op } from 'sequelize';
+import { emitToChannel } from '../socket.js';
 
 /**
  * Create a new post
@@ -60,7 +62,14 @@ const createPost = async (
     isDeleted: false
   });
 
-  return formatPostResponse(post);
+  const formatted = formatPostResponse(post);
+
+  // Emit real-time updates to channel room
+  if (channelId) {
+    emitToChannel(channelId, 'channel_post_created', formatted);
+  }
+
+  return formatted;
 };
 
 /**
@@ -226,6 +235,17 @@ const pinPost = async (postId: string, userRole: string): Promise<any> => {
   post.isPinned = true;
   await post.save();
 
+  // 🔔 Notify author
+  try {
+    await notificationService.createNotification(
+      post.authorId,
+      NotificationType.POST_PINNED,
+      postId
+    );
+  } catch (err) {
+    console.error('Failed to create notification for pinned post:', err);
+  }
+
   return formatPostResponse(post);
 };
 
@@ -354,6 +374,28 @@ const getPostsByGroup = async (groupId: string, userId: string): Promise<any[]> 
 };
 
 /**
+ * Get posts by author ID
+ */
+const getPostsByAuthor = async (authorId: string): Promise<any[]> => {
+  const posts = await Post.findAll({
+    where: {
+      authorId,
+      isDeleted: false
+    },
+    include: [
+      {
+        model: User,
+        as: 'author',
+        attributes: ['id', 'fullName', 'email', 'profilePhotoUrl']
+      }
+    ],
+    order: [['createdAt', 'DESC']]
+  });
+
+  return posts.map(formatPostResponse);
+};
+
+/**
  * Format post response
  */
 const formatPostResponse = (post: Post): any => {
@@ -383,6 +425,7 @@ export default {
   getPostById,
   getPostsByChannel,
   getPostsByGroup,
+  getPostsByAuthor,
   updatePost,
   deletePost,
   pinPost,

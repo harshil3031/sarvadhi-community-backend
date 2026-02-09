@@ -32,6 +32,13 @@ router.get('/', authenticate, asyncHandler(channelController.getAccessibleChanne
 router.get('/public', authenticate, asyncHandler(channelController.getPublicChannels));
 
 /**
+ * @route   GET /api/channels/search
+ * @desc    Search channels
+ * @access  Private
+ */
+router.get('/search', authenticate, asyncHandler(channelController.searchChannels));
+
+/**
  * @route   GET /api/channels/:id
  * @desc    Get channel by ID
  * @access  Private
@@ -112,6 +119,40 @@ router.post(
   authenticate,
   authorize('admin', 'moderator'),
   asyncHandler(channelController.inviteToChannel)
+);
+
+/**
+ * @route   POST /api/channels/:id/remove-member
+ * @desc    Remove member from channel
+ * @access  Private (creator or admin)
+ */
+router.post(
+  '/:id/remove-member',
+  authenticate,
+  authorize('admin', 'moderator'),
+  asyncHandler(channelController.removeMember)
+);
+
+/**
+ * @route   POST /api/channels/:id/accept-invite
+ * @desc    Accept a channel invitation
+ * @access  Private
+ */
+router.post(
+  '/:id/accept-invite',
+  authenticate,
+  asyncHandler(channelController.acceptInvite)
+);
+
+/**
+ * @route   POST /api/channels/:id/reject-invite
+ * @desc    Reject a channel invitation
+ * @access  Private
+ */
+router.post(
+  '/:id/reject-invite',
+  authenticate,
+  asyncHandler(channelController.rejectInvite)
 );
 
 export default router;

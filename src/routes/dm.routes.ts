@@ -54,4 +54,11 @@ router.delete('/messages/:id', authenticate, asyncHandler(dmController.deleteMes
  */
 router.get('/users/search', authenticate, asyncHandler(dmController.searchUsers));
 
+/**
+ * @route   POST /api/dms/:conversationId/read
+ * @desc    Mark messages as read
+ * @access  Private
+ */
+router.post('/:conversationId/read', authenticate, asyncHandler(dmController.markAsRead));
+
 export default router;

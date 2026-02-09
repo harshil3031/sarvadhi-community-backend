@@ -27,6 +27,13 @@ router.get('/', authenticate, asyncHandler(groupController.getAllGroups));
 router.get('/my', authenticate, asyncHandler(groupController.getMyGroups));
 
 /**
+ * @route   GET /api/groups/search
+ * @desc    Search groups
+ * @access  Private
+ */
+router.get('/search', authenticate, asyncHandler(groupController.searchGroups));
+
+/**
  * @route   GET /api/groups/:id
  * @desc    Get group by ID
  * @access  Private

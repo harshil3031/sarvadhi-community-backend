@@ -1,5 +1,6 @@
 import { Comment, Post, User } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../utils/errors.js';
+import notificationService, { NotificationType } from './notification.service.js';
 
 /**
  * Create a comment on a post
@@ -33,6 +34,19 @@ const createComment = async (
     content,
     isDeleted: false
   });
+
+  // 🔔 Notify post author
+  if (post.authorId !== authorId) {
+    try {
+      await notificationService.createNotification(
+        post.authorId,
+        NotificationType.POST_COMMENT,
+        postId
+      );
+    } catch (err) {
+      console.error('Failed to create notification for comment:', err);
+    }
+  }
 
   return formatCommentResponse(comment);
 };

@@ -11,10 +11,17 @@ const startServer = async (): Promise<void> => {
   try {
     // Test database connection
     const dbConnected = await testConnection();
-    
+
     if (!dbConnected) {
       console.error('Failed to connect to database. Exiting...');
       process.exit(1);
+    }
+
+    // Sync database schema (in sync with models)
+    if (config.env === 'development') {
+      const sequelize = (await import('./db/index.js')).default;
+      await sequelize.sync({ alter: true });
+      console.log('✓ Database schema synchronized');
     }
 
     // Create HTTP server

@@ -255,6 +255,30 @@ export const joinGroup = async (req: Request, res: Response): Promise<void> => {
   });
 };
 
+/**
+ * GET /groups/search
+ * Search groups
+ */
+export const searchGroups = async (req: Request, res: Response): Promise<void> => {
+  const { q } = req.query;
+  const query = q as string;
+
+  if (!query) {
+    res.status(200).json({
+      success: true,
+      data: []
+    });
+    return;
+  }
+
+  const groups = await groupService.searchGroups(query, req.user?.id);
+
+  res.status(200).json({
+    success: true,
+    data: groups
+  });
+};
+
 export default {
   createGroup,
   getMyGroups,
@@ -266,5 +290,6 @@ export default {
   removeUser,
   getAllGroups,
   getGroupMembers,
-  joinGroup
+  joinGroup,
+  searchGroups
 };

@@ -13,6 +13,7 @@ import { User } from './db/models/index.js';
 
 // Store active socket connections: userId -> socketId
 const activeConnections = new Map<string, Set<string>>();
+let ioInstance: SocketIOServer | null = null;
 
 export const initializeSocket = (httpServer: HTTPServer) => {
   const io = new SocketIOServer(httpServer, {
@@ -21,6 +22,8 @@ export const initializeSocket = (httpServer: HTTPServer) => {
       credentials: true
     }
   });
+
+  ioInstance = io;
 
   /**
    * Middleware: Authenticate socket connection
@@ -70,6 +73,18 @@ export const initializeSocket = (httpServer: HTTPServer) => {
 
     // Join user-specific room for notifications
     socket.join(`user:${userId}`);
+
+    /**
+     * ping event
+     * Payload: { ts?: number }
+     * Responds with pong for client heartbeat
+     */
+    socket.on('ping', (payload: any = {}) => {
+      socket.emit('pong', {
+        ts: payload?.ts || Date.now(),
+        serverTs: Date.now()
+      });
+    });
 
     /**
      * send_message event
@@ -202,6 +217,60 @@ export const initializeSocket = (httpServer: HTTPServer) => {
     });
 
     /**
+     * join_channel event
+     * Join a channel room for real-time updates
+     * Payload: { channelId }
+     */
+    socket.on('join_channel', (payload: any) => {
+      try {
+        const { channelId } = payload;
+
+        if (!channelId) {
+          socket.emit('error', {
+            code: 'INVALID_PAYLOAD',
+            message: 'channelId is required'
+          });
+          return;
+        }
+
+        socket.join(`channel:${channelId}`);
+        console.log(`User ${userId} joined channel ${channelId}`);
+      } catch (error: any) {
+        socket.emit('error', {
+          code: 'JOIN_CHANNEL_FAILED',
+          message: error.message || 'Failed to join channel'
+        });
+      }
+    });
+
+    /**
+     * leave_channel event
+     * Leave a channel room
+     * Payload: { channelId }
+     */
+    socket.on('leave_channel', (payload: any) => {
+      try {
+        const { channelId } = payload;
+
+        if (!channelId) {
+          socket.emit('error', {
+            code: 'INVALID_PAYLOAD',
+            message: 'channelId is required'
+          });
+          return;
+        }
+
+        socket.leave(`channel:${channelId}`);
+        console.log(`User ${userId} left channel ${channelId}`);
+      } catch (error: any) {
+        socket.emit('error', {
+          code: 'LEAVE_CHANNEL_FAILED',
+          message: error.message || 'Failed to leave channel'
+        });
+      }
+    });
+
+    /**
      * leave_conversation event
      * Leave the conversation room
      * Payload: { conversationId }
@@ -267,4 +336,31 @@ export const getActiveSocketIds = (userId: string): string[] => {
 export const isUserOnline = (userId: string): boolean => {
   const sockets = activeConnections.get(userId);
   return sockets ? sockets.size > 0 : false;
+};
+
+/**
+ * Emit event to a conversation room
+ */
+export const emitToConversation = (conversationId: string, event: string, payload: any) => {
+  if (ioInstance) {
+    ioInstance.to(`conversation:${conversationId}`).emit(event, payload);
+  }
+};
+
+/**
+ * Emit event to a channel room
+ */
+export const emitToChannel = (channelId: string, event: string, payload: any) => {
+  if (ioInstance) {
+    ioInstance.to(`channel:${channelId}`).emit(event, payload);
+  }
+};
+
+/**
+ * Emit event to a specific user
+ */
+export const emitToUser = (userId: string, event: string, payload: any) => {
+  if (ioInstance) {
+    ioInstance.to(`user:${userId}`).emit(event, payload);
+  }
 };

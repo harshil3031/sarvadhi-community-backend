@@ -1,7 +1,8 @@
-import { Notification, User, PushToken } from '../db/models/index.js';
+import { Notification, User, PushToken, Channel, ChannelInvite, Group } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../utils/errors.js';
 import { Op } from 'sequelize';
 import { sendPushNotification } from '../utils/pushNotification.js';
+import { emitToUser } from '../socket.js';
 
 /**
  * Notification types
@@ -31,7 +32,8 @@ const getNotifications = async (userId: string): Promise<any[]> => {
     limit: 100 // Limit to last 100 notifications
   });
 
-  return notifications.map(formatNotificationResponse);
+  // Format all notifications with await
+  return Promise.all(notifications.map(n => formatNotificationResponse(n)));
 };
 
 /**
@@ -57,7 +59,10 @@ const createNotification = async (
     isRead: false
   });
 
-  const formatted = formatNotificationResponse(notification);
+  const formatted = await formatNotificationResponse(notification);
+
+  // 🔔 SEND REAL-TIME NOTIFICATION VIA SOCKET
+  emitToUser(userId, 'new_notification', formatted);
 
   // 🔔 SEND PUSH NOTIFICATION
   await sendPushNotification(userId, {
@@ -170,28 +175,83 @@ const deleteOldNotifications = async (daysOld: number = 30): Promise<number> => 
 
 /**
  * Format notification response with human-readable message
+ * Fetches related data (channel name, inviter name, etc.)
  */
-const formatNotificationResponse = (notification: Notification): any => {
-  const typeMessages: Record<string, string> = {
-    'post_comment': 'New comment on your post',
-    'post_reaction': 'Someone reacted to your post',
-    'channel_invite': 'You were invited to a channel',
-    'group_invite': 'You were invited to a group',
-    'dm_message': 'New direct message',
-    'post_mention': 'You were mentioned in a post',
-    'comment_mention': 'You were mentioned in a comment',
-    'post_pinned': 'A post was pinned'
-  };
+const formatNotificationResponse = async (notification: Notification): Promise<any> => {
+  let title = 'Notification';
+  let message = 'You have a new notification';
+  let channelName = '';
+  let inviterName = '';
+
+  try {
+    // Fetch details based on notification type
+    if (notification.type === NotificationType.CHANNEL_INVITE && notification.referenceId) {
+      // Fetch channel details
+      const channel = await Channel.findByPk(notification.referenceId);
+      if (channel) {
+        channelName = channel.name;
+        title = 'Channel Invitation';
+        
+        // Fetch inviter details from channel_invites table
+        const invite = await ChannelInvite.findOne({
+          where: {
+            channelId: notification.referenceId,
+            invitedUserId: notification.userId,
+            status: 'pending'
+          },
+          include: [{
+            model: User,
+            as: 'inviter',
+            attributes: ['fullName']
+          }]
+        });
+        
+        if (invite && invite.inviter) {
+          inviterName = invite.inviter.fullName;
+          message = `${inviterName} invited you to join "${channelName}"`;
+        } else {
+          message = `You were invited to join "${channelName}"`;
+        }
+      }
+    } else if (notification.type === NotificationType.GROUP_INVITE && notification.referenceId) {
+      // Fetch group details
+      const group = await Group.findByPk(notification.referenceId);
+      if (group) {
+        title = 'Group Invitation';
+        message = `You were invited to join "${group.name}"`;
+      }
+    } else {
+      // Default messages for other types
+      const typeMessages: Record<string, { title: string; message: string }> = {
+        'post_comment': { title: 'New Comment', message: 'Someone commented on your post' },
+        'post_reaction': { title: 'New Reaction', message: 'Someone reacted to your post' },
+        'dm_message': { title: 'New Message', message: 'You have a new direct message' },
+        'post_mention': { title: 'Mention', message: 'You were mentioned in a post' },
+        'comment_mention': { title: 'Mention', message: 'You were mentioned in a comment' },
+        'post_pinned': { title: 'Pinned Post', message: 'A post was pinned' }
+      };
+      
+      const typeData = typeMessages[notification.type];
+      if (typeData) {
+        title = typeData.title;
+        message = typeData.message;
+      }
+    }
+  } catch (err) {
+    console.error('Error formatting notification:', err);
+    // Fall back to generic message
+    message = `Notification: ${notification.type}`;
+  }
 
   return {
     id: notification.id,
     userId: notification.userId,
     type: notification.type,
     referenceId: notification.referenceId,
+    relatedId: notification.referenceId, // Map referenceId to relatedId for frontend compatibility
     isRead: notification.isRead,
-    // Basic text fields used by the mobile app
-    title: 'Notification',
-    message: typeMessages[notification.type] || `Notification: ${notification.type}`,
+    title,
+    message,
     createdAt: notification.createdAt
   };
 };

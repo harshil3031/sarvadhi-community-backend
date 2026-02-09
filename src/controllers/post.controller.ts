@@ -231,6 +231,25 @@ export const getPostsByGroup = async (req: Request, res: Response): Promise<void
   });
 };
 
+/**
+ * GET /posts/user/:authorId
+ * Get posts by a specific user
+ */
+export const getPostsByAuthor = async (req: Request, res: Response): Promise<void> => {
+  const { authorId } = req.params;
+
+  if (!req.user) {
+    throw new ValidationError('User not authenticated');
+  }
+
+  const posts = await postService.getPostsByAuthor(authorId);
+
+  res.status(200).json({
+    success: true,
+    data: posts
+  });
+};
+
 export default {
   createPost,
   getPosts,
@@ -240,5 +259,6 @@ export default {
   unpinPost,
   getPostById,
   getPostsByChannel,
-  getPostsByGroup
+  getPostsByGroup,
+  getPostsByAuthor
 };

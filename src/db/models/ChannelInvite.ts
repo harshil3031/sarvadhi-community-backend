@@ -16,6 +16,11 @@ export class ChannelInvite extends Model<ChannelInviteAttributes> implements Cha
   declare invitedBy: string;
   declare status: 'pending' | 'accepted' | 'rejected';
   declare createdAt: Date;
+  
+  // Association properties
+  declare inviter?: any; // User who sent the invite
+  declare invitedUser?: any; // User who received the invite
+  declare channel?: any; // Channel being invited to
 }
 
 export const initChannelInvite = (sequelize: Sequelize) => {

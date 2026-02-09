@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import dmService from '../services/dm.service.js';
 import { ValidationError } from '../utils/errors.js';
+import { emitToConversation } from '../socket.js';
 
 /**
  * GET /dms/conversations
@@ -84,9 +85,40 @@ export const sendMessage = async (req: Request, res: Response): Promise<void> =>
 
   const message = await dmService.sendMessage(conversationId, req.user.id, content);
 
+  // Broadcast to other participants via socket
+  emitToConversation(conversationId, 'receive_message', {
+    message,
+    conversationId
+  });
+
   res.status(201).json({
     success: true,
     data: message
+  });
+};
+
+/**
+ * POST /dms/:conversationId/read
+ * Mark messages as read
+ */
+export const markAsRead = async (req: Request, res: Response): Promise<void> => {
+  const { conversationId } = req.params;
+
+  if (!req.user) {
+    throw new ValidationError('User not authenticated');
+  }
+
+  await dmService.markAsRead(conversationId, req.user.id);
+
+  // Broadcast read status via socket
+  emitToConversation(conversationId, 'message_read', {
+    conversationId,
+    userId: req.user.id
+  });
+
+  res.status(200).json({
+    success: true,
+    message: 'Messages marked as read'
   });
 };
 
@@ -136,7 +168,7 @@ export const deleteMessage = async (req: Request, res: Response): Promise<void> 
 /**
  * Search users to start a 1-on-1 DM
  */
-export const searchUsers = async (req: Request, res:Response) => {
+export const searchUsers = async (req: Request, res: Response) => {
   if (!req.user) {
     throw new ValidationError('User not authenticated');
   }
@@ -154,5 +186,6 @@ export default {
   sendMessage,
   updateMessage,
   deleteMessage,
-  searchUsers
+  searchUsers,
+  markAsRead
 };

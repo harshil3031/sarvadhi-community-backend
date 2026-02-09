@@ -83,6 +83,11 @@ export const initializeModels = (sequelize: Sequelize) => {
   ChannelMember.belongsTo(Channel, { foreignKey: 'channelId' });
   ChannelMember.belongsTo(User, { foreignKey: 'userId' });
 
+  // ChannelInvite associations
+  ChannelInvite.belongsTo(Channel, { foreignKey: 'channelId', as: 'channel' });
+  ChannelInvite.belongsTo(User, { foreignKey: 'invitedUserId', as: 'invitedUser' });
+  ChannelInvite.belongsTo(User, { foreignKey: 'invitedBy', as: 'inviter' });
+
   GroupMember.belongsTo(Group, { foreignKey: 'groupId' });
   GroupMember.belongsTo(User, { foreignKey: 'userId' });
 

@@ -1,5 +1,6 @@
 import { PostReaction, Post, User } from '../db/models/index.js';
 import { ValidationError, NotFoundError } from '../utils/errors.js';
+import notificationService, { NotificationType } from './notification.service.js';
 import { fn, col } from 'sequelize';
 
 /**
@@ -36,6 +37,20 @@ const addReaction = async (
     // Update existing reaction with new emoji
     existingReaction.emoji = emoji;
     await existingReaction.save();
+
+    // 🔔 Notify post author
+    if (post.authorId !== userId) {
+      try {
+        await notificationService.createNotification(
+          post.authorId,
+          NotificationType.POST_REACTION,
+          postId
+        );
+      } catch (err) {
+        console.error('Failed to create notification for reaction update:', err);
+      }
+    }
+
     return formatReactionResponse(existingReaction);
   }
 
@@ -45,6 +60,19 @@ const addReaction = async (
     userId,
     emoji
   });
+
+  // 🔔 Notify post author
+  if (post.authorId !== userId) {
+    try {
+      await notificationService.createNotification(
+        post.authorId,
+        NotificationType.POST_REACTION,
+        postId
+      );
+    } catch (err) {
+      console.error('Failed to create notification for reaction:', err);
+    }
+  }
 
   return formatReactionResponse(reaction);
 };

@@ -1,10 +1,45 @@
-/**
- * User Services
- * Business logic for user operations
- */
-
 import { User } from '../db/models/index.js';
 import { NotFoundError } from '../utils/errors.js';
+import { Op } from 'sequelize';
+
+/**
+ * Get user by ID
+ */
+const getUserById = async (userId: string): Promise<any> => {
+  const user = await User.findByPk(userId, {
+    attributes: ['id', 'fullName', 'email', 'profilePhotoUrl', 'role', 'department', 'createdAt']
+  });
+
+  if (!user) {
+    throw new NotFoundError('User not found');
+  }
+
+  return user;
+};
+
+/**
+ * Search users by name or email
+ */
+const searchUsers = async (query: string, excludeUserId?: string): Promise<any[]> => {
+  const where: any = {
+    [Op.or]: [
+      { fullName: { [Op.iLike]: `%${query}%` } },
+      { email: { [Op.iLike]: `%${query}%` } }
+    ]
+  };
+
+  if (excludeUserId) {
+    where.id = { [Op.ne]: excludeUserId };
+  }
+
+  const users = await User.findAll({
+    where,
+    attributes: ['id', 'fullName', 'email', 'profilePhotoUrl', 'role', 'department', 'last_seen_at'],
+    limit: 20
+  });
+
+  return users;
+};
 
 /**
  * Update user profile
@@ -43,9 +78,9 @@ const updateUser = async (
 };
 
 export const userService = {
-  getUserById: null,
+  getUserById,
   updateUser,
-  searchUsers: null,
+  searchUsers,
   getUserByEmail: null
 };
 

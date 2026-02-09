@@ -1,6 +1,8 @@
 import { Channel, ChannelMember, ChannelInvite, User } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError, ConflictError } from '../utils/errors.js';
-import { fn, col } from 'sequelize';
+import notificationService, { NotificationType } from './notification.service.js';
+import { emitToUser } from '../socket.js';
+import { fn, col, Op } from 'sequelize';
 
 /**
  * Create a new channel
@@ -113,10 +115,10 @@ const getChannelById = async (channelId: string, userId: string): Promise<any> =
     where: { channelId, userId }
   });
 
-  // For private channels, only members can view
-  if (channel.type === 'private' && !isMember) {
-    throw new ForbiddenError('Access denied to this private channel');
-  }
+  // For private channels, only members can view posts, but metadata is okay for joining
+  // if (channel.type === 'private' && !isMember) {
+  //   throw new ForbiddenError('Access denied to this private channel');
+  // }
 
   // Get member count
   const memberCount = await ChannelMember.count({
@@ -214,6 +216,9 @@ const joinChannel = async (channelId: string, userId: string): Promise<void> => 
     channelId,
     userId
   });
+
+  // Emit real-time membership update
+  emitToUser(userId, 'channel_membership_changed', { channelId, isMember: true });
 };
 
 /**
@@ -237,6 +242,9 @@ const leaveChannel = async (channelId: string, userId: string): Promise<void> =>
 
   // Remove member
   await member.destroy();
+
+  // Emit real-time membership update
+  emitToUser(userId, 'channel_membership_changed', { channelId, isMember: false });
 };
 
 /**
@@ -326,6 +334,9 @@ const approveJoinRequest = async (
   // Update invite status
   invite.status = 'accepted';
   await invite.save();
+
+  // Emit real-time membership update to target user
+  emitToUser(targetUserId, 'channel_membership_changed', { channelId, isMember: true });
 };
 
 /**
@@ -367,13 +378,20 @@ const inviteToChannel = async (
   const existingInvite = await ChannelInvite.findOne({
     where: {
       channelId,
-      invitedUserId: targetUserId,
-      status: 'pending'
+      invitedUserId: targetUserId
     }
   });
 
   if (existingInvite) {
-    throw new ConflictError('User already has a pending invite to this channel');
+    if (existingInvite.status === 'pending') {
+      throw new ConflictError('User already has a pending invite to this channel');
+    } else if (existingInvite.status === 'rejected') {
+      // Delete the old rejected invite so we can create a new one
+      await existingInvite.destroy();
+    } else if (existingInvite.status === 'accepted') {
+      // This shouldn't happen since we check membership above, but just in case
+      throw new ConflictError('User has already accepted the invite');
+    }
   }
 
   // Create invite
@@ -383,6 +401,17 @@ const inviteToChannel = async (
     invitedBy: inviterUserId,
     status: 'pending'
   });
+
+  // 🔔 Notify user
+  try {
+    await notificationService.createNotification(
+      targetUserId,
+      NotificationType.CHANNEL_INVITE,
+      channelId
+    );
+  } catch (err) {
+    console.error('Failed to create notification for channel invite:', err);
+  }
 };
 
 /**
@@ -404,39 +433,49 @@ const formatChannelResponse = (channel: Channel): any => {
  * Get all accessible channels for a user
  */
 const getAccessibleChannels = async (userId: string): Promise<any[]> => {
-  // Get public channels
-  const publicChannels = await Channel.findAll({
-    where: { type: 'public', deletedAt: null }
-  });
-
   // Get channels where user is a member
-  const memberChannels = await ChannelMember.findAll({
+  const memberRecords = await ChannelMember.findAll({
     where: { userId },
     attributes: ['channelId']
   });
+  const memberIdList = memberRecords.map(m => m.channelId);
 
-  const memberChannelIds = memberChannels.map(m => m.channelId);
-
-  let result: any[] = publicChannels;
-
-  // Get additional channels user is a member of (if any)
-  if (memberChannelIds.length > 0) {
-    const additionalChannels = await Channel.findAll({
-      where: {
-        id: memberChannelIds,
-        deletedAt: null
+  // Find all public channels OR channels where the user is a member
+  const channels = await Channel.findAll({
+    where: {
+      [Op.or]: [
+        { type: 'public' },
+        { id: memberIdList }
+      ],
+      deletedAt: null
+    },
+    include: [
+      {
+        model: User,
+        as: 'creator',
+        attributes: ['id', 'fullName', 'email']
       }
-    });
+    ],
+    order: [['createdAt', 'DESC']]
+  });
 
-    // Merge and deduplicate by ID
-    const channelMap = new Map();
-    publicChannels.forEach(ch => channelMap.set(ch.id, ch));
-    additionalChannels.forEach(ch => channelMap.set(ch.id, ch));
+  // Format with membership and count
+  return Promise.all(
+    channels.map(async (channel) => {
+      const isMember = memberIdList.includes(channel.id);
 
-    result = Array.from(channelMap.values());
-  }
+      const memberCount = await ChannelMember.count({
+        where: { channelId: channel.id }
+      });
 
-  return result;
+      const formatted = formatChannelResponse(channel);
+      return {
+        ...formatted,
+        isMember,
+        memberCount
+      };
+    })
+  );
 };
 
 /**
@@ -461,6 +500,170 @@ const getChannelMembers = async (channelId: string): Promise<any[]> => {
   }));
 };
 
+/**
+ * Search channels by name
+ */
+const searchChannels = async (query: string, userId?: string): Promise<any[]> => {
+  const where: any = {
+    name: { [Op.iLike]: `%${query}%` },
+    deletedAt: null
+  };
+
+  const channels = await Channel.findAll({
+    where,
+    include: [
+      {
+        model: ChannelMember,
+        as: 'channel_members',
+        attributes: [],
+        duplicating: false
+      }
+    ],
+    attributes: {
+      include: [
+        [
+          fn('COUNT', col('channel_members.user_id')),
+          'memberCount'
+        ]
+      ]
+    },
+    group: ['Channel.id'],
+    limit: 10
+  });
+
+  return Promise.all(
+    channels.map(async (channel) => {
+      let isMember = false;
+      if (userId) {
+        const membership = await ChannelMember.findOne({
+          where: { channelId: channel.id, userId }
+        });
+        isMember = !!membership;
+      }
+      return {
+        ...formatChannelResponse(channel),
+        memberCount: (channel as any).getDataValue('memberCount') || 0,
+        isMember
+      };
+    })
+  );
+};
+
+/**
+ * Remove a member from a channel
+ */
+const removeMember = async (
+  channelId: string,
+  userId: string,
+  requestingUserId: string,
+  requestingUserRole: string
+): Promise<void> => {
+  const channel = await Channel.findByPk(channelId);
+
+  if (!channel) {
+    throw new NotFoundError('Channel not found');
+  }
+
+  // Only creator or admin can remove members
+  if (channel.createdBy !== requestingUserId && requestingUserRole !== 'admin' && requestingUserRole !== 'moderator') {
+    throw new ForbiddenError('Only channel creator or admin can remove members');
+  }
+
+  // Cannot remove the creator
+  if (userId === channel.createdBy) {
+    throw new ForbiddenError('Cannot remove channel creator');
+  }
+
+  // Check if user is a member
+  const member = await ChannelMember.findOne({
+    where: { channelId, userId }
+  });
+
+  if (!member) {
+    throw new NotFoundError('User is not a member of this channel');
+  }
+
+  // Remove the member
+  await member.destroy();
+};
+
+/**
+ * Accept a channel invitation
+ */
+const acceptInvite = async (channelId: string, userId: string): Promise<void> => {
+  const channel = await Channel.findByPk(channelId);
+
+  if (!channel) {
+    throw new NotFoundError('Channel not found');
+  }
+
+  // Find pending invite
+  const invite = await ChannelInvite.findOne({
+    where: {
+      channelId,
+      invitedUserId: userId,
+      status: 'pending'
+    }
+  });
+
+  if (!invite) {
+    throw new NotFoundError('Pending invitation not found');
+  }
+
+  // Check if already a member (shouldn't happen but safeguard)
+  const existingMember = await ChannelMember.findOne({
+    where: { channelId, userId }
+  });
+
+  if (existingMember) {
+    // Update invite status and return success
+    invite.status = 'accepted';
+    await invite.save();
+    return;
+  }
+
+  // Create channel membership
+  await ChannelMember.create({
+    channelId,
+    userId
+  });
+
+  // Update invite status to accepted
+  invite.status = 'accepted';
+  await invite.save();
+
+  // Emit real-time membership update
+  emitToUser(userId, 'channel_membership_changed', { channelId, isMember: true });
+};
+
+/**
+ * Reject a channel invitation
+ */
+const rejectInvite = async (channelId: string, userId: string): Promise<void> => {
+  const channel = await Channel.findByPk(channelId);
+
+  if (!channel) {
+    throw new NotFoundError('Channel not found');
+  }
+
+  // Find pending invite
+  const invite = await ChannelInvite.findOne({
+    where: {
+      channelId,
+      invitedUserId: userId,
+      status: 'pending'
+    }
+  });
+
+  if (!invite) {
+    throw new NotFoundError('Pending invitation not found');
+  }
+
+  // Update status to rejected
+  invite.status = 'rejected';
+  await invite.save();
+};
+
 export default {
   createChannel,
   getPublicChannels,
@@ -473,5 +676,9 @@ export default {
   approveJoinRequest,
   inviteToChannel,
   getAccessibleChannels,
-  getChannelMembers
+  getChannelMembers,
+  searchChannels,
+  removeMember,
+  acceptInvite,
+  rejectInvite
 };

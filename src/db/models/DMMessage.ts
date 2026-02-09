@@ -8,6 +8,7 @@ export interface DMMessageAttributes {
   content: string;
   imageUrl?: string | null;
   isDeleted?: boolean; // Optional with default
+  readAt?: Date | null;
 }
 
 export class DMMessage extends Model<DMMessageAttributes> implements DMMessageAttributes {
@@ -17,6 +18,7 @@ export class DMMessage extends Model<DMMessageAttributes> implements DMMessageAt
   declare content: string;
   declare imageUrl: string | null;
   declare isDeleted: boolean;
+  declare readAt: Date | null;
   declare createdAt: Date;
 }
 
@@ -62,6 +64,10 @@ export const initDMMessage = (sequelize: Sequelize) => {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false
+      },
+      readAt: {
+        type: DataTypes.DATE,
+        allowNull: true
       }
     },
     {

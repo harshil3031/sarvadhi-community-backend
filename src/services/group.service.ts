@@ -1,5 +1,7 @@
 import { Group, GroupMember, User } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError, ConflictError } from '../utils/errors.js';
+import notificationService, { NotificationType } from './notification.service.js';
+import { Op } from 'sequelize';
 
 /**
  * Create a new group
@@ -97,9 +99,9 @@ const getGroupById = async (groupId: string, userId: string): Promise<any> => {
     where: { groupId, userId }
   });
 
-  if (!isMember) {
-    throw new ForbiddenError('Access denied to this group');
-  }
+  // if (!isMember) {
+  //   throw new ForbiddenError('Access denied to this group');
+  // }
 
   // Get member count
   const memberCount = await GroupMember.count({
@@ -109,7 +111,7 @@ const getGroupById = async (groupId: string, userId: string): Promise<any> => {
   const response = formatGroupResponse(group);
   return {
     ...response,
-    isMember: true,
+    isMember: !!isMember,
     memberCount
   };
 };
@@ -211,6 +213,17 @@ const inviteUser = async (
     groupId,
     userId: targetUser.id
   });
+
+  // 🔔 Notify user
+  try {
+    await notificationService.createNotification(
+      targetUser.id,
+      NotificationType.GROUP_INVITE,
+      groupId
+    );
+  } catch (err) {
+    console.error('Failed to create notification for group invite:', err);
+  }
 };
 
 /**
@@ -269,9 +282,45 @@ const removeUser = async (
 };
 
 /**
- * Get all accessible groups for a user (alias for getMyGroups)
+ * Get all accessible groups (all active groups) with membership status
  */
-const getAllAccessibleGroups = getMyGroups;
+const getAllAccessibleGroups = async (userId: string): Promise<any[]> => {
+  // Get all groups
+  const groups = await Group.findAll({
+    where: { deletedAt: null },
+    include: [
+      {
+        model: User,
+        as: 'creator',
+        attributes: ['id', 'fullName', 'email']
+      }
+    ],
+    order: [['createdAt', 'DESC']]
+  });
+
+  // Get user's memberships
+  const userMemberships = await GroupMember.findAll({
+    where: { userId },
+    attributes: ['groupId']
+  });
+  const joinedGroupIds = new Set(userMemberships.map(m => m.groupId));
+
+  // Format response
+  const result = [];
+  for (const group of groups) {
+    const memberCount = await GroupMember.count({
+      where: { groupId: group.id }
+    });
+
+    result.push({
+      ...formatGroupResponse(group),
+      memberCount,
+      isMember: joinedGroupIds.has(group.id)
+    });
+  }
+
+  return result;
+};
 
 /**
  * Get all members of a group with user information
@@ -357,6 +406,44 @@ const formatGroupResponse = (group: Group): any => {
   };
 };
 
+/**
+ * Search groups by name
+ */
+const searchGroups = async (query: string, userId?: string): Promise<any[]> => {
+  const where: any = {
+    name: { [Op.iLike]: `%${query}%` },
+    deletedAt: null
+  };
+
+  const groups = await Group.findAll({
+    where,
+    order: [['createdAt', 'DESC']],
+    limit: 10
+  });
+
+  return Promise.all(
+    groups.map(async (group) => {
+      let isMember = false;
+      if (userId) {
+        const membership = await GroupMember.findOne({
+          where: { groupId: group.id, userId }
+        });
+        isMember = !!membership;
+      }
+
+      const memberCount = await GroupMember.count({
+        where: { groupId: group.id }
+      });
+
+      return {
+        ...formatGroupResponse(group),
+        memberCount,
+        isMember
+      };
+    })
+  );
+};
+
 export default {
   createGroup,
   getMyGroups,
@@ -368,5 +455,6 @@ export default {
   inviteUser,
   joinGroup,
   leaveGroup,
-  removeUser
+  removeUser,
+  searchGroups
 };

@@ -42,6 +42,13 @@ router.get('/channel/:channelId', authenticate, asyncHandler(postController.getP
 router.get('/group/:groupId', authenticate, asyncHandler(postController.getPostsByGroup));
 
 /**
+ * @route   GET /api/posts/user/:authorId
+ * @desc    Get posts from a specific user
+ * @access  Private
+ */
+router.get('/user/:authorId', authenticate, asyncHandler(postController.getPostsByAuthor));
+
+/**
  * @route   PUT /api/posts/:id
  * @desc    Update post (author or moderator)
  * @access  Private
