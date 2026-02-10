@@ -24,6 +24,17 @@ router.post(
 );
 
 /**
+ * @route   POST /api/notifications/test-push
+ * @desc    Send a test push notification to current user
+ * @access  Private
+ */
+router.post(
+  '/test-push',
+  authenticate,
+  asyncHandler(notificationController.sendTestPush)
+);
+
+/**
  * @route   POST /api/notifications/:id/read
  * @desc    Mark notification as read
  * @access  Private

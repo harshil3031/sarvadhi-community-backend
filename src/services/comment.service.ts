@@ -41,7 +41,8 @@ const createComment = async (
       await notificationService.createNotification(
         post.authorId,
         NotificationType.POST_COMMENT,
-        postId
+        postId,
+        author
       );
     } catch (err) {
       console.error('Failed to create notification for comment:', err);

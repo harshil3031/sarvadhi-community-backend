@@ -146,6 +146,28 @@ export const registerPushToken = async (
   });
 };
 
+/**
+ * POST /notifications/test-push
+ * Send a test push notification to current user
+ */
+export const sendTestPush = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  if (!req.user) {
+    throw new ValidationError('User not authenticated');
+  }
+
+  const { title, message } = req.body || {};
+
+  await notificationService.sendTestPush(req.user.id, title, message);
+
+  res.status(200).json({
+    success: true,
+    message: 'Test push notification sent',
+  });
+};
+
 export default {
   getNotifications,
   markAsRead,
@@ -153,5 +175,6 @@ export default {
   getUnreadCount,
   deleteNotification,
   deleteAllNotifications,
-  registerPushToken
+  registerPushToken,
+  sendTestPush
 };

@@ -7,3 +7,5 @@ build/
 coverage/
 .vscode/
 *.tsbuildinfo
+firebase-*.json
+*firebase-adminsdk*.json

@@ -1,19 +1,10 @@
-import fetch from 'node-fetch';
 import { PushToken } from '../db/models/index.js';
+import { getFirebaseAdmin } from './firebaseAdmin.js';
 
 interface PushPayload {
   title: string;
   body: string;
   data?: Record<string, any>;
-}
-
-interface ExpoResponse {
-  data?: {
-    status?: string;
-    details?: {
-      error?: string;
-    };
-  };
 }
 
 export const sendPushNotification = async (
@@ -30,35 +21,55 @@ export const sendPushNotification = async (
 
   if (!tokens.length) return;
 
-  for (const tokenRecord of tokens) {
-    try {
-      const response = await fetch(
-        'https://exp.host/--/api/v2/push/send',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            to: tokenRecord.token,
-            sound: 'default',
-            ...payload,
-          }),
-        }
-      );
+  const app = getFirebaseAdmin();
+  const messaging = app.messaging();
 
-      const result = (await response.json()) as ExpoResponse;
+  const registrationTokens = tokens.map(t => t.token);
 
-      // Expo may say token is invalid → deactivate it
-      if (
-        result?.data?.status === 'error' &&
-        result?.data?.details?.error === 'DeviceNotRegistered'
-      ) {
-        tokenRecord.isActive = false;
-        await tokenRecord.save();
-      }
-    } catch (error) {
-      console.error('Push notification error:', error);
+  if (!registrationTokens.length) return;
+
+  const dataPayload: Record<string, string> = {};
+  if (payload.data) {
+    for (const [key, value] of Object.entries(payload.data)) {
+      dataPayload[key] = typeof value === 'string' ? value : JSON.stringify(value);
     }
+  }
+
+  try {
+    const response = await messaging.sendEachForMulticast({
+      tokens: registrationTokens,
+      notification: {
+        title: payload.title,
+        body: payload.body,
+      },
+      data: dataPayload,
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'default',
+          sound: 'default',
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            badge: 1,
+          },
+        },
+      },
+    });
+
+    response.responses.forEach((res, idx) => {
+      if (!res.success) {
+        const errorCode = (res.error as any)?.code;
+        if (errorCode === 'messaging/registration-token-not-registered') {
+          tokens[idx].isActive = false;
+          tokens[idx].save().catch(() => undefined);
+        }
+      }
+    });
+  } catch (error) {
+    console.error('FCM push notification error:', error);
   }
 };

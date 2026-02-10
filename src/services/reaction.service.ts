@@ -44,7 +44,8 @@ const addReaction = async (
         await notificationService.createNotification(
           post.authorId,
           NotificationType.POST_REACTION,
-          postId
+          postId,
+          user
         );
       } catch (err) {
         console.error('Failed to create notification for reaction update:', err);
@@ -67,7 +68,8 @@ const addReaction = async (
       await notificationService.createNotification(
         post.authorId,
         NotificationType.POST_REACTION,
-        postId
+        postId,
+        user
       );
     } catch (err) {
       console.error('Failed to create notification for reaction:', err);

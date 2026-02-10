@@ -214,12 +214,17 @@ const inviteUser = async (
     userId: targetUser.id
   });
 
+  const inviter = await User.findByPk(inviterId, {
+    attributes: ['id', 'fullName', 'profilePhotoUrl']
+  });
+
   // 🔔 Notify user
   try {
     await notificationService.createNotification(
       targetUser.id,
       NotificationType.GROUP_INVITE,
-      groupId
+      groupId,
+      inviter
     );
   } catch (err) {
     console.error('Failed to create notification for group invite:', err);

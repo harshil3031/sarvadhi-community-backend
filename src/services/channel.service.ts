@@ -402,12 +402,17 @@ const inviteToChannel = async (
     status: 'pending'
   });
 
+  const inviter = await User.findByPk(inviterUserId, {
+    attributes: ['id', 'fullName', 'profilePhotoUrl']
+  });
+
   // 🔔 Notify user
   try {
     await notificationService.createNotification(
       targetUserId,
       NotificationType.CHANNEL_INVITE,
-      channelId
+      channelId,
+      inviter
     );
   } catch (err) {
     console.error('Failed to create notification for channel invite:', err);

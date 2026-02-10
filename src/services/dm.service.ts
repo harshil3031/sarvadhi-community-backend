@@ -272,10 +272,16 @@ const sendMessage = async (
 
   for (const participant of otherParticipants) {
     try {
+      // Get sender details to include in notification
+      const sender = await User.findByPk(senderId, {
+        attributes: ['fullName', 'profilePhotoUrl']
+      });
+      
       await notificationService.createNotification(
         participant.userId,
         NotificationType.DM_MESSAGE,
-        conversationId
+        conversationId,
+        sender // Pass sender info
       );
     } catch (err) {
       console.error('Failed to create notification for DM:', err);
