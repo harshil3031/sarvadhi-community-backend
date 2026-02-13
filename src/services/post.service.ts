@@ -1,7 +1,7 @@
 import { Post, Channel, ChannelMember, Group, GroupMember, User } from '../db/models/index.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../utils/errors.js';
 import notificationService, { NotificationType } from './notification.service.js';
-import { Op } from 'sequelize';
+import { Op, Sequelize } from 'sequelize';
 import { emitToChannel } from '../socket.js';
 
 /**
@@ -78,8 +78,10 @@ const createPost = async (
 const getPosts = async (
   channelId: string | null,
   groupId: string | null,
-  userId: string
-): Promise<any[]> => {
+  userId: string,
+  limit: number = 20,
+  offset: number = 0
+): Promise<any> => {
   const where: any = { isDeleted: false };
 
   if (channelId) {
@@ -117,31 +119,54 @@ const getPosts = async (
       throw new ForbiddenError('You do not have access to this group');
     }
   } else {
-    // Get all accessible posts (public channels + user's groups)
-    const publicChannelIds = (await Channel.findAll({
-      where: { type: 'public' },
-      attributes: ['id']
-    })).map(c => c.id);
+    // Get feed: Posts from channels user is a member of AND groups user is a member of
 
+    // 1. Get joined channels
+    const userChannelIds = (await ChannelMember.findAll({
+      where: { userId },
+      attributes: ['channelId']
+    })).map(m => m.channelId);
+
+    // 2. Get joined groups
     const userGroupIds = (await GroupMember.findAll({
       where: { userId },
       attributes: ['groupId']
     })).map(m => m.groupId);
 
-    if (publicChannelIds.length === 0 && userGroupIds.length === 0) {
-      // User has no accessible resources
-      return [];
+    if (userChannelIds.length === 0 && userGroupIds.length === 0) {
+      return { posts: [], total: 0, hasMore: false };
     }
 
-    // Posts from public channels or user's groups
     where[Op.or] = [
-      { channelId: { [Op.in]: publicChannelIds } },
+      { channelId: { [Op.in]: userChannelIds } },
       { groupId: { [Op.in]: userGroupIds } }
     ];
   }
 
   const posts = await Post.findAll({
     where,
+    attributes: {
+      include: [
+        [
+          Sequelize.literal(`(
+            SELECT CAST(COUNT(*) AS INTEGER)
+            FROM post_reactions
+            WHERE post_reactions.post_id = "Post".id
+          )`),
+          'reactionCount'
+        ],
+        [
+          Sequelize.literal(`(
+            SELECT emoji
+            FROM post_reactions
+            WHERE post_reactions.post_id = "Post".id
+            AND post_reactions.user_id = '${userId}'
+            LIMIT 1
+          )`),
+          'userReaction'
+        ]
+      ]
+    },
     include: [
       {
         model: User,
@@ -149,8 +174,19 @@ const getPosts = async (
         attributes: ['id', 'fullName', 'email', 'profilePhotoUrl']
       }
     ],
-    order: [['isPinned', 'DESC'], ['createdAt', 'DESC']]
+    order: [['isPinned', 'DESC'], ['createdAt', 'DESC']],
+    limit,
+    offset,
   });
+
+  // Check if there are more posts
+  // We could do a count, but for performance in feed, maybe just check if we got `limit` items?
+  // Let's do a proper count for now to be safe, or just return the array. 
+  // The frontend infinite/query needs to know if there's a next page.
+  // Converting this to return an object structure implies breaking change for `getPostsByChannel` calls if they use this underlying function?
+  // `getPostsByChannel` uses its own `findAll`. This `getPosts` is only called by `getPosts` controller.
+  // But wait, `getPosts` controller returns `res.status(200).json({ success: true, data: posts })`.
+  // If I change return type here, I must update controller.
 
   return posts.map(formatPostResponse);
 };
@@ -414,6 +450,14 @@ const formatPostResponse = (post: Post): any => {
   // Include author details if available
   if ((post as any).author) {
     response.author = (post as any).author;
+  }
+
+  // Include reaction data if available
+  if ((post as any).dataValues?.reactionCount !== undefined) {
+    response.reactionCount = (post as any).dataValues.reactionCount;
+  }
+  if ((post as any).dataValues?.userReaction !== undefined) {
+    response.userReaction = (post as any).dataValues.userReaction;
   }
 
   return response;

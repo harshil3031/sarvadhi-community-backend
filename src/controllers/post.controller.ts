@@ -48,7 +48,7 @@ export const createPost = async (req: Request, res: Response): Promise<void> => 
  * Get posts by channelId or groupId
  */
 export const getPosts = async (req: Request, res: Response): Promise<void> => {
-  const { channelId, groupId } = req.query;
+  const { channelId, groupId, limit, offset } = req.query;
 
   if (channelId && groupId) {
     throw new ValidationError('Cannot filter by both channelId and groupId');
@@ -58,10 +58,15 @@ export const getPosts = async (req: Request, res: Response): Promise<void> => {
     throw new ValidationError('User not authenticated');
   }
 
+  const limitNum = parseInt(limit as string) || 20;
+  const offsetNum = parseInt(offset as string) || 0;
+
   const posts = await postService.getPosts(
     (channelId as string) || null,
     (groupId as string) || null,
-    req.user.id
+    req.user.id,
+    limitNum,
+    offsetNum
   );
 
   res.status(200).json({
